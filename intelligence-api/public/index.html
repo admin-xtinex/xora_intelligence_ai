@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Xora Intelligence</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #121610;
+        --surface: #1b211b;
+        --raised: #242b24;
+        --fg: #e7eee0;
+        --muted: #96a396;
+        --line: #313a31;
+        --accent: #d7a15c;
+        --ink: #1c140b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.45 "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+      }
+      main { max-width: 720px; margin: 0 auto; padding: 28px 16px 48px; }
+      .kicker { font-family: ui-monospace, monospace; letter-spacing: 0.14em; color: var(--accent); font-size: 12px; }
+      h1 { font-size: 28px; margin: 6px 0 8px; }
+      p { color: var(--muted); }
+      form, .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-top: 16px; }
+      label { display: block; color: var(--muted); font-size: 14px; }
+      input {
+        width: 100%; height: 44px; margin-top: 6px; border-radius: 8px;
+        border: 1px solid var(--line); background: var(--bg); color: var(--fg); padding: 0 12px; font-size: 16px;
+      }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      button {
+        height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised);
+        color: var(--fg); padding: 0 14px; cursor: pointer; font-size: 14px;
+      }
+      button.primary { width: 100%; margin-top: 14px; background: var(--accent); color: var(--ink); border-color: var(--accent); font-weight: 600; }
+      button.on { background: var(--accent); color: var(--ink); border-color: var(--accent); }
+      .price { font-family: ui-monospace, monospace; font-size: 32px; margin: 4px 0 0; color: var(--fg); }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+      .stat { background: var(--bg); border-radius: 8px; padding: 8px 12px; }
+      .stat span { display: block; color: var(--muted); font-size: 13px; }
+      .stat b { font-family: ui-monospace, monospace; font-weight: 500; }
+      .score { font-family: ui-monospace, monospace; font-size: 56px; color: var(--accent); margin: 0; }
+      .err { color: var(--accent); }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); }
+      th { color: var(--muted); font-weight: 500; }
+      td.num { font-family: ui-monospace, monospace; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="kicker">XORA INTELLIGENCE</p>
+      <h1>Live setup check</h1>
+      <p>Name a coin. The desk reads the current 1-minute tape and asks the backend what similar historical trades did.</p>
+      <form id="form">
+        <label>Coin
+          <input id="coin" value="bitcoin" autocomplete="off" placeholder="bitcoin, ETH, solana" />
+        </label>
+        <div class="row" id="quick"></div>
+        <button class="primary" id="go" type="submit">Load market and analyze</button>
+        <p class="err" id="err" hidden></p>
+      </form>
+      <section class="card" id="market" hidden></section>
+      <section class="card" id="result" hidden></section>
+      <section class="card" id="neighbors" hidden></section>
+    </main>
+    <script>
+      const quick = ["BTC", "ETH", "SOL", "DOGE", "XRP"];
+      const coin = document.querySelector("#coin");
+      const err = document.querySelector("#err");
+      const marketEl = document.querySelector("#market");
+      const resultEl = document.querySelector("#result");
+      const neighborsEl = document.querySelector("#neighbors");
+      let snapshot = null;
+
+      document.querySelector("#quick").innerHTML = quick
+        .map((item) => `<button type="button" data-symbol="${item}">${item}</button>`)
+        .join("");
+
+      function roi(value) {
+        const points = value * 100;
+        return `${points > 0 ? "+" : ""}${points.toFixed(2)}%`;
+      }
+      function priceText(value) {
+        if (value >= 1000) return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        if (value >= 1) return value.toFixed(4);
+        return value.toPrecision(4);
+      }
+      function showError(message) {
+        err.hidden = !message;
+        err.textContent = message || "";
+      }
+
+      function renderMarket() {
+        const market = snapshot;
+        marketEl.hidden = false;
+        marketEl.innerHTML = `
+          <p class="kicker">${market.product}</p>
+          <p class="price">${priceText(market.price)}</p>
+          <p>15m ${market.change15mPct > 0 ? "+" : ""}${market.change15mPct.toFixed(2)}%</p>
+          <div class="grid">
+            <div class="stat"><span>RSI 14</span><b>${market.rsi14.toFixed(1)}</b></div>
+            <div class="stat"><span>ATR</span><b>${market.atrPct.toFixed(3)}%</b></div>
+            <div class="stat"><span>Trend</span><b>${market.trend}</b></div>
+            <div class="stat"><span>BTC</span><b>${market.btcTrend}</b></div>
+          </div>
+          <div class="row">
+            ${["LONG", "SHORT"].map((side) => `<button type="button" data-side="${side}" class="${market.direction === side ? "on" : ""}">${side}</button>`).join("")}
+          </div>
+          <p>Tape as of ${market.asOf.slice(11, 16)} UTC</p>`;
+      }
+
+      function renderResult(body) {
+        resultEl.hidden = false;
+        const base = Math.round((body.baseline?.successRate ?? 0.383) * 100);
+        const delta = body.score - base;
+        resultEl.innerHTML = `
+          <p class="kicker">BACKEND RESPONSE</p>
+          <p class="score">${body.score}</p>
+          <p>vs book base ${base} · ${delta > 0 ? "+" : ""}${delta} pts</p>
+          <div class="grid">
+            <div class="stat"><span>Reliability</span><b>${body.reliability}</b></div>
+            <div class="stat"><span>Sample</span><b>${body.sampleSize}</b></div>
+            <div class="stat"><span>Similarity</span><b>${body.similarity.toFixed(2)}</b></div>
+            <div class="stat"><span>Model P(win)</span><b>${(body.model.prediction * 100).toFixed(1)}%</b></div>
+            <div class="stat"><span>Weighted win rate</span><b>${(body.statistics.weightedSuccessRate * 100).toFixed(1)}%</b></div>
+            <div class="stat"><span>Expectancy</span><b>${roi(body.statistics.expectancy)}</b></div>
+          </div>`;
+        const rows = body.neighbors || [];
+        neighborsEl.hidden = rows.length === 0;
+        neighborsEl.innerHTML = `<p class="kicker">CLOSEST TRADES</p><table>
+          <thead><tr><th>Symbol</th><th>Side</th><th>Exit</th><th>Similarity</th><th>Outcome</th></tr></thead>
+          <tbody>${rows.map((row) => `<tr>
+            <td>${row.symbol.replace("USDT", "")}</td><td>${row.direction}</td><td>${row.exitType.replaceAll("_", " ")}</td>
+            <td class="num">${row.similarity.toFixed(2)}</td><td class="num">${roi(row.outcome)}</td></tr>`).join("")}</tbody></table>`;
+      }
+
+      async function run(symbol, direction) {
+        showError("");
+        const button = document.querySelector("#go");
+        button.disabled = true;
+        button.textContent = "Reading the tape…";
+        try {
+          const marketResponse = await fetch(`/v1/market?symbol=${encodeURIComponent(symbol)}`);
+          const market = await marketResponse.json();
+          if (!marketResponse.ok) throw new Error(market.error || "Market data did not load.");
+          const data = direction ? { ...market.data, direction } : market.data;
+          snapshot = direction ? { ...market, direction, data } : market;
+          coin.value = snapshot.symbol;
+          renderMarket();
+          const analyzeResponse = await fetch("/v1/analyze", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ data, options: { includeNeighbors: true } }),
+          });
+          const body = await analyzeResponse.json();
+          if (!analyzeResponse.ok) throw new Error(body.error || "The backend rejected the setup.");
+          renderResult(body);
+        } catch (error) {
+          showError(error.message || "Request failed.");
+        } finally {
+          button.disabled = false;
+          button.textContent = "Load market and analyze";
+        }
+      }
+
+      document.querySelector("#form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        run(coin.value.trim());
+      });
+      document.body.addEventListener("click", (event) => {
+        const symbol = event.target?.dataset?.symbol;
+        const side = event.target?.dataset?.side;
+        if (symbol) {
+          coin.value = symbol;
+          run(symbol);
+        } else if (side && snapshot && snapshot.direction !== side) {
+          run(snapshot.symbol, side);
+        }
+      });
+    </script>
+  </body>
+</html>

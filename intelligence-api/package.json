@@ -1,0 +1,14 @@
+{
+  "name": "xora-intelligence-api",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node --experimental-strip-types src/server.ts",
+    "test": "node --experimental-strip-types --test src/stats.test.ts",
+    "build:index": "node --experimental-strip-types scripts/build-intelligence.ts"
+  },
+  "dependencies": {
+    "zod": "^4.1.0"
+  }
+}
