@@ -6,6 +6,12 @@ The index is an exact cosine search over L2-normalized feature vectors (the flat
 
 Outcomes (ROI, exit type, MFE/MAE) are never part of the fingerprint.
 
+`GET /v1/market?symbol=bitcoin`
+
+Reads the latest closed 1-minute USD candles, builds the decision-time fingerprint, and returns it as `data` ready for `POST /v1/analyze`.
+
+Open `/` in a browser for the coin desk: enter a name, load the tape, and send it to the backend.
+
 ## Endpoints
 
 `GET /health`
